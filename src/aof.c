@@ -636,7 +636,7 @@ int loadAppendOnlyFile(char *filename) {
                 goto readerr;
             }
             if (buf[0] != '$') goto fmterr;
-            len = strtol(buf+1,NULL,10);
+            len = PORT_STRTOL(buf+1,NULL,10);
             argsds = sdsnewlen(NULL,len);
             if (len && fread(argsds,len,1,fp) == 0) {
                 sdsfree(argsds);
@@ -1081,9 +1081,9 @@ int rewriteAppendOnlyFile(char *filename) {
     return REDIS_OK;
 
 werr:
+    redisLog(REDIS_WARNING,"Write error writing append only file on disk: %s", strerror(errno));
     fclose(fp);
     unlink(tmpfile);
-    redisLog(REDIS_WARNING,"Write error writing append only file on disk: %s", strerror(errno));
     if (di) dictReleaseIterator(di);
     return REDIS_ERR;
 }
@@ -1113,7 +1113,7 @@ int rewriteAppendOnlyFileBackground(void) {
         char tmpfile[256];
 
 #ifndef _WIN32
-		/* Child */
+        /* Child */
         closeListeningSockets(0);
         redisSetProcTitle("redis-aof-rewrite");
 #endif

@@ -101,6 +101,7 @@ redisClient *createClient(int fd) {
     c->repl_ack_off = 0;
     c->repl_ack_time = 0;
     c->slave_listening_port = 0;
+    c->slave_capa = SLAVE_CAPA_NONE;
     c->reply = listCreate();
     c->reply_bytes = 0;
     c->obuf_soft_limit_reached_time = 0;
@@ -639,20 +640,6 @@ void disconnectSlaves(void) {
     }
 }
 
-/* This function is called when the slave lose the connection with the
- * master into an unexpected way. */
-void replicationHandleMasterDisconnection(void) {
-    server.master = NULL;
-    server.repl_state = REDIS_REPL_CONNECT;
-    server.repl_down_since = server.unixtime;
-    /* We lost connection with our master, force our slaves to resync
-     * with us as well to load the new data set.
-     *
-     * If server.masterhost is NULL the user called SLAVEOF NO ONE so
-     * slave resync is not needed. */
-    if (server.masterhost != NULL) disconnectSlaves();
-}
-
 void freeClient(redisClient *c) {
     listNode *ln;
 
@@ -918,7 +905,7 @@ void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
              zmalloc_used_memory() < server.maxmemory)) break;
     }
 #ifndef _WIN32
-	if (totwritten > 0) c->lastinteraction = server.unixtime;
+    if (totwritten > 0) c->lastinteraction = server.unixtime;
 #else
     if (totwritten > 0) {
 		/* For clients representing masters we don't count sending data
@@ -1318,7 +1305,7 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
         return;
     }
 #ifdef WIN32_IOCP
-    WSIOCP_ReceiveDone(fd);
+    WSIOCP_QueueNextRead(fd);
 #endif
     if (nread) {
         sdsIncrLen(c->querybuf,nread);
@@ -1397,7 +1384,7 @@ int genClientPeerId(redisClient *client, char *peerid, size_t peerid_len) {
         /* TCP client. */
         int retval = anetPeerToString(client->fd,ip,sizeof(ip),&port);
 #ifndef _WIN32
-		formatPeerId(peerid,peerid_len,ip,port);
+        formatPeerId(peerid,peerid_len,ip,port);
 #else
         if (retval == -1 && client->flags & REDIS_MASTER) {
             formatPeerId(peerid, peerid_len, "MASTER", 0);
@@ -1796,6 +1783,12 @@ void flushSlavesOutputBuffers(void) {
         redisClient *slave = listNodeValue(ln);
         int events;
 
+        /* Note that the following will not flush output buffers of slaves
+         * in STATE_ONLINE but having put_online_on_ack set to true: in this
+         * case the writable event is never installed, since the purpose
+         * of put_online_on_ack is to postpone the moment it is installed.
+         * This is what we want since slaves in this state should not receive
+         * writes before the first ACK. */
         events = aeGetFileEvents(server.el,slave->fd);
         if (events & AE_WRITABLE &&
             slave->replstate == REDIS_REPL_ONLINE &&

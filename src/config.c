@@ -153,7 +153,7 @@ void loadServerConfigFromString(char *config) {
             server.unixsocket = zstrdup(argv[1]);
         } else if (!strcasecmp(argv[0],"unixsocketperm") && argc == 2) {
             errno = 0;
-            server.unixsocketperm = (mode_t)strtol(argv[1], NULL, 8);
+            server.unixsocketperm = (mode_t)PORT_STRTOL(argv[1], NULL, 8);
             if (errno || server.unixsocketperm > 0777) {
                 err = "Invalid socket file permissions"; goto loaderr;
             }
@@ -546,32 +546,48 @@ void loadServerConfigFromString(char *config) {
                 if (err) goto loaderr;
             }
 #ifdef _WIN32
-		} else if (!strcasecmp(argv[0],"maxheap")) {
-			// ignore. This is taken care of in the qfork code.
+        } else if (!strcasecmp(argv[0],"maxheap")) {
+            // ignore. This is taken care of in the qfork code.
         } else if (!strcasecmp(argv[0], "heapdir")) {
             // ignore. This is taken care of in the qfork code.
         } else if (!strcasecmp(argv[0], "service-name")) {
-			// ignore. This is taken care of in the win32_service code.
+            // ignore. This is taken care of in the win32_service code.
         } else if (!strcasecmp(argv[0], "persistence-available")) {
             if (strcasecmp(argv[1], "no") == 0) {
-                //remove BGSAVE and BGREWRITEAOF when persistence is disabled
+                // remove BGSAVE, BGREWRITEAOF and replication commands 
+                // when persistence is disabled
                 int retval;
                 sds bgsave;
                 sds bgrewriteaof;
+                sds replconf;
+                sds psync;
+                sds sync;
 
                 bgsave = sdsnew("bgsave");
                 bgrewriteaof = sdsnew("bgrewriteaof");
+                replconf = sdsnew("replconf");
+                psync = sdsnew("psync");
+                sync = sdsnew("sync");
 
                 retval = dictDelete(server.commands, bgsave);
                 redisAssert(retval == DICT_OK);
                 retval = dictDelete(server.commands, bgrewriteaof);
                 redisAssert(retval == DICT_OK);
+                retval = dictDelete(server.commands, replconf);
+                redisAssert(retval == DICT_OK);
+                retval = dictDelete(server.commands, psync);
+                redisAssert(retval == DICT_OK);
+                retval = dictDelete(server.commands, sync);
+                redisAssert(retval == DICT_OK);
 
                 sdsfree(bgsave);
                 sdsfree(bgrewriteaof);
+                sdsfree(replconf);
+                sdsfree(psync);
+                sdsfree(sync);
             }
 #endif
-		} else {
+        } else {
             err = "Bad directive or wrong number of arguments"; goto loaderr;
         }
         sdsfreesplitres(argv,argc);
@@ -1736,16 +1752,16 @@ int rewriteConfigOverwriteFile(char *configfile, sds content) {
     int fd = open(configfile,O_RDWR|O_CREAT,0644);
     int content_size = (int)sdslen(content), padding = 0;
 #ifdef _WIN32
-	struct _stat64 sb;  //BUGBUG: won't work on Win32
+    struct _stat64 sb;  //BUGBUG: won't work on Win32
 #else
-	struct stat sb;
+    struct stat sb;
 #endif
     sds content_padded;
 
     /* 1) Open the old file (or create a new one if it does not
      *    exist), get the size. */
     if (fd == -1) return -1; /* errno set by open(). */
-	if (fstat(fd,&sb) == -1) {
+    if (fstat(fd,&sb) == -1) {
         close(fd);
         return -1; /* errno set by fstat(). */
     }

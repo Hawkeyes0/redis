@@ -78,7 +78,12 @@ BOOL WSIOCP_CloseSocketState(aeSockState* socketState) {
 }
 
 BOOL WSIOCP_CloseSocketStateRFD(int rfd) {
-    return WSIOCP_CloseSocketState(WSIOCP_GetExistingSocketState(rfd));
+    aeSockState* socketState = WSIOCP_GetExistingSocketState(rfd);
+    if (socketState != NULL) {
+        return WSIOCP_CloseSocketState(socketState);
+    } else {
+        return FALSE;
+    }
 }
 
 int WSIOCP_QueueAccept(int listenfd) {
@@ -261,10 +266,10 @@ int WSIOCP_Accept(int fd, struct sockaddr *sa, socklen_t *len) {
     return acceptfd;
 }
 
-/* After doing read, caller needs to call done so that we can
- * continue to check for read events.
- * This is not necessary if caller will delete read events */
-int WSIOCP_ReceiveDone(int fd) {
+/* After doing a read, the caller needs to call this method in
+ * order to continue to check for read events.
+ * This is not necessary if the caller will delete read events */
+int WSIOCP_QueueNextRead(int fd) {
     aeSockState *sockstate;
     int result;
     WSABUF zreadbuf;
@@ -323,7 +328,7 @@ int WSIOCP_SocketSend(int fd, char *buf, int len, void *eventLoop,
     if (sockstate == NULL ||
         (sockstate->masks & SOCKET_ATTACHED) == 0 ||
         proc == NULL) {
-		result = (int)write(fd, buf, len);
+        result = (int) write(fd, buf, len);
         if (result == SOCKET_ERROR) {
             errno = WSAGetLastError();
         }

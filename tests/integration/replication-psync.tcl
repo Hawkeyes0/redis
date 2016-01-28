@@ -4,11 +4,11 @@ proc start_bg_complex_data {host port db ops} {
 }
 
 proc stop_bg_complex_data {handle} {
-	if { $::tcl_platform(platform) == "windows" } {
+    if { $::tcl_platform(platform) == "windows" } {
         kill_proc2 $handle
-	} else {
-		catch {exec /bin/kill -9 $handle}
-	}
+    } else {
+        catch {exec /bin/kill -9 $handle}
+    }
 }
 
 # Creates a master-slave pair and breaks the link continuously to force
@@ -17,7 +17,11 @@ proc stop_bg_complex_data {handle} {
 #
 # You can specifiy backlog size, ttl, delay before reconnection, test duration
 # in seconds, and an additional condition to verify at the end.
-proc test_psync {descr duration backlog_size backlog_ttl delay cond} {
+#
+# If reconnect is > 0, the test actually try to break the connection and
+# reconnect with the master, otherwise just the initial synchronization is
+# checked for consistency.
+proc test_psync {descr duration backlog_size backlog_ttl delay cond diskless reconnect} {
     start_server {tags {"repl"}} {
         start_server {} {
 
@@ -28,6 +32,8 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond} {
 
             $master config set repl-backlog-size $backlog_size
             $master config set repl-backlog-ttl $backlog_ttl
+            $master config set repl-diskless-sync $diskless
+            $master config set repl-diskless-sync-delay 1
 
             set load_handle0 [start_bg_complex_data $master_host $master_port 9 100000]
             set load_handle1 [start_bg_complex_data $master_host $master_port 11 100000]
@@ -52,31 +58,33 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond} {
                 }
             }
 
-            test "Test replication partial resync: $descr" {
+            test "Test replication partial resync: $descr (diskless: $diskless, reconnect: $reconnect)" {
                 # Now while the clients are writing data, break the maste-slave
                 # link multiple times.
-                for {set j 0} {$j < $duration*10} {incr j} {
-                    after 100
-                    #catch {puts "MASTER [$master dbsize] keys, SLAVE [$slave dbsize] keys"}
+                if ($reconnect) {
+                    for {set j 0} {$j < $duration*10} {incr j} {
+                        after 100
+                        # catch {puts "MASTER [$master dbsize] keys, SLAVE [$slave dbsize] keys"}
 
-                    if {($j % 20) == 0} {
-                        catch {
-                            if {$delay} {
-                                $slave multi
-								if { $::tcl_platform(platform) == "windows" } {
-									$slave client kill MASTER:0
-								} else {
-									$slave client kill $master_host:$master_port
-								}
+                        if {($j % 20) == 0} {
+                            catch {
+                                if {$delay} {
+                                    $slave multi
+                                    if { $::tcl_platform(platform) == "windows" } {
+                                        $slave client kill MASTER:0
+                                    } else {
+                                        $slave client kill $master_host:$master_port
+                                    }
 
-                                $slave debug sleep $delay
-                                $slave exec
-                            } else {
-								if { $::tcl_platform(platform) == "windows" } {
-									$slave client kill MASTER:0
-								} else {
-									$slave client kill $master_host:$master_port
-								}
+                                    $slave debug sleep $delay
+                                    $slave exec
+                                } else {
+                                    if { $::tcl_platform(platform) == "windows" } {
+                                        $slave client kill MASTER:0
+                                    } else {
+                                        $slave client kill $master_host:$master_port
+                                    }
+                                }
                             }
                         }
                     }
@@ -94,28 +102,28 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond} {
                 if {[$master debug digest] ne [$slave debug digest]} {
                     set csv1 [csvdump r]
                     set csv2 [csvdump {r -1}]
-					if { $::tcl_platform(platform) == "windows" } {
-						set tmpdir $::env(TEMP)
-						set fd [open [file join $tmpdir repldump1.txt] w]
-					} else {
-						set fd [open /tmp/repldump1.txt w]
-					}
-				
+                    if { $::tcl_platform(platform) == "windows" } {
+                        set tmpdir $::env(TEMP)
+                        set fd [open [file join $tmpdir repldump1.txt] w]
+                    } else {
+                        set fd [open /tmp/repldump1.txt w]
+                    }
+
                     puts -nonewline $fd $csv1
                     close $fd
-					if { $::tcl_platform(platform) == "windows" } {
-						set fd [open [file join $tmpdir repldump2.txt] w]
-					} else {
-						set fd [open /tmp/repldump2.txt w]
-					}
+                    if { $::tcl_platform(platform) == "windows" } {
+                        set fd [open [file join $tmpdir repldump2.txt] w]
+                    } else {
+                        set fd [open /tmp/repldump2.txt w]
+                    }
                     puts -nonewline $fd $csv2
                     close $fd
                     puts "Master - Slave inconsistency"
-					if { $::tcl_platform(platform) == "windows" } {
-						puts "Run fc against repldump*.txt in $tmpdir for more info"
-					} else {
-						puts "Run diff -u against /tmp/repldump*.txt for more info"
-					}
+                    if { $::tcl_platform(platform) == "windows" } {
+                        puts "Run fc against repldump*.txt in $tmpdir for more info"
+                    } else {
+                        puts "Run diff -u against /tmp/repldump*.txt for more info"
+                    }
                 }
                 assert_equal [r debug digest] [r -1 debug digest]
                 eval $cond
@@ -124,24 +132,24 @@ proc test_psync {descr duration backlog_size backlog_ttl delay cond} {
     }
 }
 
-test_psync {ok psync} 6 1000000 3600 0 {
-    assert {[s -1 sync_partial_ok] > 0}
-}
 
-test_psync {no backlog} 6 100 3600 0.5 {
-    assert {[s -1 sync_partial_err] > 0}
-}
+foreach diskless {no yes} {
+    test_psync {no reconnection, just sync} 6 1000000 3600 0 {
+    } $diskless 0
 
-if { $::tcl_platform(platform) == "windows" } {
-	set delay 6
-} else {
-	set delay 3
-}
+    test_psync {ok psync} 6 1000000 3600 0 {
+        assert {[s -1 sync_partial_ok] > 0}
+    } $diskless 1
 
-test_psync {ok after delay} $delay 100000000 3600 3 {
-    assert {[s -1 sync_partial_ok] > 0}
-}
+    test_psync {no backlog} 6 100 3600 0.5 {
+        assert {[s -1 sync_partial_err] > 0}
+    } $diskless 1
 
-test_psync {backlog expired} $delay 100000000 1 3 {
-    assert {[s -1 sync_partial_err] > 0}
+    test_psync {ok after delay} 3 100000000 3600 3 {
+        assert {[s -1 sync_partial_ok] > 0}
+    } $diskless 1
+
+    test_psync {backlog expired} 3 100000000 1 3 {
+        assert {[s -1 sync_partial_err] > 0}
+    } $diskless 1
 }

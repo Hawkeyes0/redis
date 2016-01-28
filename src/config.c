@@ -153,7 +153,7 @@ void loadServerConfigFromString(char *config) {
             server.unixsocket = zstrdup(argv[1]);
         } else if (!strcasecmp(argv[0],"unixsocketperm") && argc == 2) {
             errno = 0;
-            server.unixsocketperm = (mode_t)strtol(argv[1], NULL, 8);
+            server.unixsocketperm = (mode_t)PORT_STRTOL(argv[1], NULL, 8);
             if (errno || server.unixsocketperm > 0777) {
                 err = "Invalid socket file permissions"; goto loaderr;
             }
@@ -588,21 +588,37 @@ void loadServerConfigFromString(char *config) {
 	        // ignore. This is taken care of in the win32_service code.
         } else if (!strcasecmp(argv[0], "persistence-available")) {
             if (strcasecmp(argv[1], "no") == 0) {
-                //remove BGSAVE and BGREWRITEAOF when persistence is disabled
+                // remove BGSAVE, BGREWRITEAOF and replication commands
+                // when persistence is disabled
                 int retval;
                 sds bgsave;
                 sds bgrewriteaof;
+                sds replconf;
+                sds psync;
+                sds sync;
 
                 bgsave = sdsnew("bgsave");
                 bgrewriteaof = sdsnew("bgrewriteaof");
+                replconf = sdsnew("replconf");
+                psync = sdsnew("psync");
+                sync = sdsnew("sync");
 
                 retval = dictDelete(server.commands, bgsave);
                 redisAssert(retval == DICT_OK);
                 retval = dictDelete(server.commands, bgrewriteaof);
                 redisAssert(retval == DICT_OK);
+                retval = dictDelete(server.commands, replconf);
+                redisAssert(retval == DICT_OK);
+                retval = dictDelete(server.commands, psync);
+                redisAssert(retval == DICT_OK);
+                retval = dictDelete(server.commands, sync);
+                redisAssert(retval == DICT_OK);
 
                 sdsfree(bgsave);
                 sdsfree(bgrewriteaof);
+                sdsfree(replconf);
+                sdsfree(psync);
+                sdsfree(sync);
             }
 #endif
         } else {

@@ -1,7 +1,7 @@
 ﻿Running Redis as a Service
 ==========================
 
-If you installed Redis using the MSI package, then Redis was already installed as a Windows service. Nothing further to do. If you would like to change its settings, you can update the *redis.windows.conf* file and then restart the Redis service (Run -\> services.msc -\> Redis -\> Restart).
+If you installed Redis using the MSI package, then Redis was already installed as a Windows service. Nothing further to do. If you would like to change its settings, you can update the *redis.windows-service.conf* file and then restart the Redis service (Run -\> services.msc -\> Redis -\> Restart).
 
 During installation of the MSI you can either use the installer’s user interface to update the port that Redis listens at and the firewall exception or run it silently without a UI. The following examples show how to install from the command line:
 
@@ -82,14 +82,14 @@ This optional argument may be used with any of the preceding commands to set the
 
 The following would install and start three separate instances of Redis as a service:
 
-redis-server --service-install –service-name redisService1 –port 10001
+redis-server --service-install --service-name redisService1 --port 10001
 
-redis-server --service-start –service-name redisService1
+redis-server --service-start --service-name redisService1
 
-redis-server --service-install –service-name redisService2 –port 10002
+redis-server --service-install --service-name redisService2 --port 10002
 
-redis-server --service-start –service-name redisService2
+redis-server --service-start --service-name redisService2
 
-redis-server --service-install –service-name redisService3 –port 10003
+redis-server --service-install --service-name redisService3 --port 10003
 
-redis-server --service-start –service-name redisService3
+redis-server --service-start --service-name redisService3
